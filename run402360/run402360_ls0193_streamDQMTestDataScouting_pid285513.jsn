@@ -1,0 +1,16 @@
+{
+  "data": [
+    "100",
+    "100",
+    "0",
+    "run402360_ls0193_streamDQMTestDataScouting_pid285513.dat",
+    "3707945",
+    "",
+    "2659279263",
+    "",
+    "DAT",
+    "0"
+  ],
+  "definition": "./run402360/output_285513.jsd",
+  "source": "lxplus801.cern.ch_285513"
+}

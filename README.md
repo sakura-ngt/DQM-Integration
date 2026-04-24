@@ -31,9 +31,18 @@ Currently the unitTest that make use of input streamer files are:
    run398183/run398183_ls0142_streamDQMOnlineScouting_pid2737183.dat
    run398183/run398183_ls0142_streamDQMOnlineScouting_pid2737183.jsn
    ```
+* the `ngt_dqm_sourceclient-live_cfg.py` reads the `streamDQMTestDataScouting` streamer files generated from run 402360 (from Run2026B pp run, [OMS link](https://cmsoms.cern.ch/cms/runs/report?cms_run=402360&cms_run_sequence=GLOBAL-RUN)):
+   ```
+   run402360/run402360_ls0193_streamDQMTestDataScouting_pid285513.dat
+   run402360/run402360_ls0193_streamDQMTestDataScouting_pid285513.jsn	
+   ```
+
 ## Recipe to regenerate Streamer files (when streamer layout gets broken)
 
 In repsonse to issue https://github.com/cms-sw/cmssw/issues/45224, streamer files have been regenerated in a release that contains https://github.com/cms-sw/cmssw/pull/44978 (in this case `CMSSW_14_0_9_MULTIARCHS`.
+
+### Recipe for `streamDQM`
+
 This was done using the following script for the pp data:
 
 ```bash
@@ -75,6 +84,8 @@ edmConfigDump "${tmpfile}" > hlt.py
 
 cmsRun hlt.py &> hlt.log
 ```
+
+### Recipe for `streamHIDQM`
 
 While the following script for the HIon data:
 ```bash
@@ -159,6 +170,8 @@ rm -fr run${RUNNUMBER}* hlt.* cmsrun.pid dump.py __pycache__
 mv prepared run${RUNNUMBER}
 ```
 
+### Recipe for `streamDQMOnlineScouting`
+
 The streamer files for the `streamDQMOnlineScouting` were prepared using the scouting specific menu:
 ```bash
 #!/bin/bash -ex
@@ -230,6 +243,107 @@ rm -fr $input
 rm -fr run${RUNNUMBER}* hlt.* cmsrun.pid dump.py __pycache__
 mv prepared run${RUNNUMBER}
 ```
+
+### Recipe for `streamDQMTestDataScouting`
+
+The streamer files for the `streamDQMTestDataScouting` were prepared using the following script:
+```bash
+#!/bin/bash -ex
+
+# cmsrel CMSSW_16_0_6_patch1
+# cd CMSSW_16_0_6_patch1/src
+# cmsenv
+
+RUNNUMBER=402360
+LUMISECTION=193
+
+hltLabel=testAddTriggerEvents
+hltLabel1="${hltLabel}_hlt1"
+hltLabel2="${hltLabel}_hlt2"
+
+INPUTFILE="root://eoscms.cern.ch//store/data/Run2026B/EphemeralHLTPhysics0/RAW/v1/000/402/360/00000/aa48b021-759e-4592-86e5-75eee46b88fc.root"
+MENU=/online/collisions/2026/2e34/v1.2/HLT/V2
+
+########################################
+# Helpers
+########################################
+
+run_cms() {
+    local cfg=$1
+    local log=$2
+
+    bash -c "echo \$\$ > cmsrun.pid; exec cmsRun ${cfg} >& ${log}"
+    job_pid=$(cat cmsrun.pid)
+    echo "cmsRun is running with PID: $job_pid"
+}
+
+prepare_output() {
+    local tag=$1   # old_runXXX or new_runXXX
+
+    rm -f run${RUNNUMBER}/run${RUNNUMBER}_ls0*_index*.*
+
+    mkdir -p prepared
+
+    local base="run${RUNNUMBER}_ls0${LUMISECTION}_streamDQMTestDataScouting_pid${job_pid}"
+
+    cat run${RUNNUMBER}/run${RUNNUMBER}_ls0000_streamDQMTestDataScouting_pid${job_pid}.ini \
+        run${RUNNUMBER}/${base}.dat \
+        > prepared/${base}.dat
+
+    cp run${RUNNUMBER}/${base}.jsn \
+       prepared/${base}_prep.jsn
+
+    jq '
+      .data as $d |
+      .data = (
+        reduce range(0; $d|length) as $i ([];
+          if ($i > 0 and .[-1] == "0" and $d[$i] == "0")
+          then .
+          else . + [$d[$i]]
+          end
+        )
+      )
+    ' "prepared/${base}_prep.jsn" > "prepared/${base}.jsn"
+
+    rm -f prepared/${base}_prep.jsn
+    rm -rf run${RUNNUMBER}* hlt.* cmsrun.pid dump.py __pycache__
+
+    mv prepared ${tag}
+}
+
+convert_input() {
+    convertToRaw -f 1000 -l 1000 -r ${RUNNUMBER}:${LUMISECTION} -o . -- "${INPUTFILE}"
+}
+
+########################################
+# Setup
+########################################
+
+rm -rf run${RUNNUMBER}*
+
+hltConfigFromDB --configName ${MENU} > ${hltLabel1}.py
+
+cat <<@EOF >> ${hltLabel1}.py
+process.load("run${RUNNUMBER}_cff")
+
+del process.PrescaleService
+
+streamPaths = [foo for foo in process.endpaths_() if foo.endswith('Output')]
+streamPaths.remove('DQMTestDataScoutingOutput')
+for foo in streamPaths:
+    process.__delattr__(foo)
+@EOF
+
+########################################
+# First run
+########################################
+
+convert_input
+run_cms "${hltLabel1}.py" "${hltLabel1}.log"
+prepare_output "${RUNNUMBER}"
+```
+
+### Recipe for `streamDQMGPUvsCPU`
 
 The streamer files for the `streamDQMGPUVsCPU` were prepared using the following script:
 ```bash
